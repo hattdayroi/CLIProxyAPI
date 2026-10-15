@@ -924,7 +924,7 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 						if disableCooling {
 							state.NextRetryAfter = time.Time{}
 						} else {
-							state.NextRetryAfter = now.Add(30 * time.Minute)
+							state.NextRetryAfter = now.Add(10 * time.Minute)
 						}
 					} else {
 						switch statusCode {
@@ -932,7 +932,7 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 							if disableCooling {
 								state.NextRetryAfter = time.Time{}
 							} else {
-								next := now.Add(30 * time.Minute)
+								next := now.Add(10 * time.Minute)
 								state.NextRetryAfter = next
 							}
 						case 404:
@@ -1669,14 +1669,19 @@ func resultErrorFromError(err error) *Error {
 	return resultErr
 }
 
-// shouldSkipCredentialCooldown reports failures that must not mark auth/model cooling.
-// Connection lifecycle is intentionally separate from request_scoped so transport
-// drops do not also stop credential rotation via isRequestInvalidError.
+// shouldSkipCredentialCooldown reports whether an error must skip cooling down
+// credentials. Semantic upstream timeouts, transient transport failures,
+// request-scoped errors, and lifecycle drops do not penalize credentials so
+// they can be retried immediately.
 func shouldSkipCredentialCooldown(err *Error) bool {
 	if err != nil && err.Code == ErrorCodeForceCooldown {
 		return false
 	}
-	return isRequestScopedResultError(err) || isConnectionLifecycleResultError(err) || isTransientTransportResultError(err)
+	return isRequestScopedResultError(err) || isConnectionLifecycleResultError(err) || isTransientTransportResultError(err) || isUpstreamTimeoutResultError(err)
+}
+
+func isUpstreamTimeoutResultError(err *Error) bool {
+	return err != nil && err.Code == upstreamTimeoutErrorCode
 }
 
 // isConnectionLifecycleError reports transport/session lifecycle failures that must
@@ -2374,6 +2379,14 @@ func isRequestInvalidError(err error) bool {
 	if err == nil {
 		return false
 	}
+	// ponytail: explicit sentinel first so wrapped context-limit errors bypass
+	// rotation/cooling/backoff even when status/body are absent; ONLY this class bypasses.
+	if errors.Is(err, ErrContextWindowExceeded) {
+		return true
+	}
+	if isUpstreamTimeoutError(err) {
+		return false
+	}
 	if isRequestScopedError(err) {
 		return true
 	}
@@ -2387,6 +2400,17 @@ func isRequestInvalidError(err error) bool {
 		return false
 	}
 	status := statusCodeFromError(err)
+	if status == http.StatusRequestEntityTooLarge {
+		// A bare 413 without a structured fault body and without context-window
+		// wording is not a definitive request fault: some upstreams return 413 for
+		// generic infrastructure size limits that may differ per credential. Only
+		// fast-fail when the body carries a known request-fault code/type or
+		// explicit context-window wording.
+		if clienterror.HasRequestFaultBody(err) || isContextWindowExceededError(err) {
+			return true
+		}
+		return false
+	}
 	if clienterror.IsRequestFault(status, err) {
 		return true
 	}
@@ -2440,7 +2464,7 @@ func applyAuthFailureState(auth *Auth, resultErr *Error, retryAfter *time.Durati
 		if disableCooling {
 			auth.NextRetryAfter = time.Time{}
 		} else {
-			auth.NextRetryAfter = now.Add(30 * time.Minute)
+			auth.NextRetryAfter = now.Add(10 * time.Minute)
 		}
 	} else {
 		switch statusCode {
@@ -2449,14 +2473,14 @@ func applyAuthFailureState(auth *Auth, resultErr *Error, retryAfter *time.Durati
 			if disableCooling {
 				auth.NextRetryAfter = time.Time{}
 			} else {
-				auth.NextRetryAfter = now.Add(30 * time.Minute)
+				auth.NextRetryAfter = now.Add(10 * time.Minute)
 			}
 		case 402, 403:
 			auth.StatusMessage = "payment_required"
 			if disableCooling {
 				auth.NextRetryAfter = time.Time{}
 			} else {
-				auth.NextRetryAfter = now.Add(30 * time.Minute)
+				auth.NextRetryAfter = now.Add(10 * time.Minute)
 			}
 		case 404:
 			auth.StatusMessage = "not_found"

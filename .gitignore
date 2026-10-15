@@ -64,6 +64,6 @@ _bmad-output/*
 # docker
 docker-compose.override.yml
 
-
 # Local LLM Wiki vault
 .llm-wiki
+config.yml
