@@ -163,6 +163,7 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 				// Missing and optional: return empty config (cloud deploy standby).
 				cfg := &Config{QuotaExceeded: QuotaExceeded{SwitchPreviewModel: true}, CredentialInFlight: DefaultCredentialInFlightConfig()}
 				cfg.NormalizePluginsConfig()
+				cfg.NormalizeClaudeConfig()
 				return cfg, nil
 			}
 		}
@@ -173,6 +174,7 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 	if optional && len(bytes.TrimSpace(data)) == 0 {
 		cfg := &Config{QuotaExceeded: QuotaExceeded{SwitchPreviewModel: true}, CredentialInFlight: DefaultCredentialInFlightConfig()}
 		cfg.NormalizePluginsConfig()
+		cfg.NormalizeClaudeConfig()
 		return cfg, nil
 	}
 
@@ -180,6 +182,7 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 		if optional {
 			cfgOptional := &Config{CredentialInFlight: DefaultCredentialInFlightConfig()}
 			cfgOptional.NormalizePluginsConfig()
+			cfgOptional.NormalizeClaudeConfig()
 			return cfgOptional, nil
 		}
 		return nil, errValidate
@@ -212,6 +215,7 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 			// In cloud deploy mode, if YAML parsing fails, return empty config instead of error.
 			cfgOptional := &Config{QuotaExceeded: QuotaExceeded{SwitchPreviewModel: true}, CredentialInFlight: DefaultCredentialInFlightConfig()}
 			cfgOptional.NormalizePluginsConfig()
+			cfgOptional.NormalizeClaudeConfig()
 			return cfgOptional, nil
 		}
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
@@ -283,6 +287,7 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 	}
 
 	cfg.NormalizePluginsConfig()
+	cfg.NormalizeClaudeConfig()
 	if errResolvePluginsDir := cfg.ResolvePluginsDir(); errResolvePluginsDir != nil && cfg.Plugins.Enabled {
 		return nil, errResolvePluginsDir
 	}
